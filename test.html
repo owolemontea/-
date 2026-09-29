@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>匕首之心插件 · 逻辑自测页</title>
+  <style>
+    body { font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #1c1b22; color: #e9e7f2; margin: 0; padding: 20px; }
+    h1 { font-size: 18px; }
+    .case { margin: 8px 0; padding: 8px 12px; border: 1px solid #3d3a49; border-radius: 8px; background: #26242e; }
+    .ok { color: #6bd98f; }
+    .bad { color: #ff6b6b; }
+    pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; color: #9b97ab; margin: 4px 0; }
+    button { padding: 8px 16px; border-radius: 8px; border: 1px solid #b79aff; background: #b79aff; color: #fff; font-weight: 700; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>匕首之心插件 · 逻辑自测页</h1>
+  <p style="color:#9b97ab;font-size:13px">
+    本页只测试纯逻辑（骰子表达式 + 车卡解析），不需要枭熊。<br>
+    注意：必须通过 http(s) 打开（比如插件托管后访问 /test.html），
+    直接用浏览器双击打开 html 文件时模块会被浏览器拦截。
+  </p>
+  <button id="run">运行全部测试</button>
+  <div id="out"></div>
+
+  <script type="module">
+    import { parseExpression, formatExpression, applyMode, rollSegments, rollDie } from "./js/dice-engine.js";
+    import { proficiencyForLevel, parseDamage, parseCard } from "./js/carddata.js";
+
+    const out = document.getElementById("out");
+    let pass = 0, fail = 0;
+
+    function check(name, actual, expected) {
+      const ok = JSON.stringify(actual) === JSON.stringify(expected);
+      const div = document.createElement("div");
+      div.className = "case";
+      div.innerHTML = `<span class="${ok ? "ok" : "bad"}">${ok ? "✔" : "✘"} ${name}</span><pre>实际: ${JSON.stringify(actual)}${ok ? "" : "\n期望: " + JSON.stringify(expected)}</pre>`;
+      out.appendChild(div);
+      ok ? pass++ : fail++;
+    }
+
+    function show(name, data) {
+      const div = document.createElement("div");
+      div.className = "case";
+      div.innerHTML = `<span class="ok">· ${name}</span><pre>${JSON.stringify(data, null, 2)}</pre>`;
+      out.appendChild(div);
+    }
+
+    document.getElementById("run").addEventListener("click", () => {
+      out.innerHTML = "";
+      pass = 0; fail = 0;
+
+      // ---- 骰子表达式 ----
+      check("解析 2d12+3", parseExpression("2d12+3"), { segments: [{ count: 2, sides: 12, sign: 1 }], flat: 3 });
+      check("解析 3d10+6", parseExpression("3d10+6"), { segments: [{ count: 3, sides: 10, sign: 1 }], flat: 6 });
+      check("解析 2d12+3+1d6（优势）", parseExpression("2d12+3+1d6"), { segments: [{ count: 2, sides: 12, sign: 1 }, { count: 1, sides: 6, sign: 1 }], flat: 3 });
+      check("解析 2d12+3-1d6（劣势）", parseExpression("2d12+3-1d6"), { segments: [{ count: 2, sides: 12, sign: 1 }, { count: 1, sides: 6, sign: -1 }], flat: 3 });
+      check("解析 2d12-1（负属性）", parseExpression("2d12-1"), { segments: [{ count: 2, sides: 12, sign: 1 }], flat: -1 });
+      check("解析 d6", parseExpression("d6"), { segments: [{ count: 1, sides: 6, sign: 1 }], flat: 0 });
+      check("中文全角＋号", parseExpression("2d12＋3"), { segments: [{ count: 2, sides: 12, sign: 1 }], flat: 3 });
+      check("中文全角－号", parseExpression("2d12－1"), { segments: [{ count: 2, sides: 12, sign: 1 }], flat: -1 });
+      check("中文括号包着", parseExpression("（2d12+3）"), { segments: [{ count: 2, sides: 12, sign: 1 }], flat: 3 });
+      check("空格混着写", parseExpression(" 2d12 + 3 "), { segments: [{ count: 2, sides: 12, sign: 1 }], flat: 3 });
+
+      const e1 = parseExpression("2d12+3");
+      check("拼回 2d12+3", formatExpression(e1.segments, e1.flat), "2d12+3");
+      const e2 = parseExpression("2d12-1");
+      check("拼回 2d12-1", formatExpression(e2.segments, e2.flat), "2d12-1");
+
+      const adv = applyMode([{ count: 2, sides: 12, sign: 1 }], 3, "adv");
+      check("优势追加 +1d6", adv.segments[1], { count: 1, sides: 6, sign: 1 });
+      const dis = applyMode([{ count: 2, sides: 12, sign: 1 }], 3, "dis");
+      check("劣势追加 -1d6", dis.segments[1], { count: 1, sides: 6, sign: -1 });
+
+      // 模拟投掷：单颗骰子范围检查
+      let diceOk = true;
+      for (let i = 0; i < 200; i++) {
+        const v = rollDie(12);
+        if (v < 1 || v > 12) diceOk = false;
+      }
+      check("d12 投掷 200 次都在 1..12", diceOk, true);
+
+      const r = rollSegments([{ count: 2, sides: 12, sign: 1 }, { count: 1, sides: 6, sign: 1 }], 3);
+      show("模拟一次 2d12+3+1d6（希望/恐惧骰应该都有值）", r);
+
+      // ---- 熟练值表 ----
+      check("熟练值 1级=1", proficiencyForLevel(1), 1);
+      check("熟练值 3级=2", proficiencyForLevel(3), 2);
+      check("熟练值 5级=3", proficiencyForLevel(5), 3);
+      check("熟练值 8级=4", proficiencyForLevel(8), 4);
+      check("熟练值 10级=4", proficiencyForLevel(10), 4);
+
+      // ---- 武器伤害解析 ----
+      check("解析 力量: d10+6", parseDamage("力量: d10+6"), { attributeName: "力量", attributeKey: "strength", count: 0, sides: 10, bonus: 6 });
+      check("解析 d6", parseDamage("d6"), { attributeName: null, attributeKey: null, count: 0, sides: 6, bonus: 0 });
+      check("解析 2d8+3", parseDamage("2d8+3"), { attributeName: null, attributeKey: null, count: 2, sides: 8, bonus: 3 });
+
+      // ---- 车卡解析（用一小段模拟数据） ----
+      const fake = {
+        name: "测试角色", level: "5",
+        proficiency: [true, true, true, false, false, false],
+        agility: { value: "0" }, strength: { value: "3" }, finesse: { value: "-1" },
+        instinct: { value: "0" }, presence: { value: "2" }, knowledge: { value: "0" },
+        evasion: "6", minorThreshold: "23", majorThreshold: "38",
+        hp: [true, true, true], hpMax: 9, stress: [], stressMax: 10,
+        hope: 2, hopeMax: 6, armorBoxes: [true, true, true], armorMax: 5,
+        gold: [true, true, true, true, true],
+        experience: ["资深玩家", ""], experienceValues: ["4", "2"],
+        characterImage: "data:image/xxx", // 应被忽略
+        professionRef: { name: "守护者  -  勇气&利刃" },
+        equipment: { weaponSlots: { primary: { name: "改良巨剑", trait: "物理/双手/近战", damage: "力量: d10+6", feature: "巨型" }, secondary: {}, inventory: [] } },
+        cards: [
+          { name: "守护者", type: "profession", professionSpecial: { 希望特性: "花费 3 希望点，清除 2 护甲槽" } },
+          { name: "卷土重来", type: "domain", class: "利刃", level: 1, description: "承受严重伤害时…" },
+        ],
+        inventory: ["火把"],
+        characterBackground: "背景故事",
+      };
+      const card = parseCard(fake);
+      check("车卡名", card.name, "测试角色");
+      check("等级", card.level, 5);
+      check("熟练值(5级)", card.proficiencyValue, 3);
+      check("职业名去掉了后缀", card.profession, "守护者");
+      check("力量值", card.attributes.strength.value, 3);
+      check("力量熟练", card.attributes.strength.proficient, true);
+      check("生命 3/9", [card.hp.current, card.hp.max], [3, 9]);
+      check("护甲 3/5", [card.armor.current, card.armor.max], [3, 5]);
+      check("金币 5/5", [card.gold.current, card.gold.max], [5, 5]);
+      check("武器数", card.weapons.length, 1);
+      check("领域卡数", card.domainCards.length, 1);
+      check("职业技能希望特性", !!card.professionSpecial["希望特性"], true);
+      check("头像未保存", JSON.stringify(card).includes("data:image"), false);
+      show("解析出的车卡（节选）", { ...card, classCards: "…", domainCards: "…" });
+
+      // ---- 武器默认骰子 ----
+      import("./js/carddata.js").then((m) => {
+        const w = card.weapons[0];
+        const atk = m.weaponAttack(w, card);
+        const dmg = m.weaponDamage(w, card);
+        check("命中表达式 2d12+3", atk.expression, "2d12+3");
+        check("伤害表达式 3d10+6", dmg.expression, "3d10+6");
+        const summary = document.createElement("div");
+        summary.className = "case";
+        summary.innerHTML = `<b>结果：${pass} 通过，${fail} 失败</b>`;
+        out.appendChild(summary);
+      });
+    });
+  </script>
+</body>
+</html>

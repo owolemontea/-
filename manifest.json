@@ -1,0 +1,16 @@
+{
+  "name": "匕首之心角色卡",
+  "version": "0.1.0",
+  "manifest_version": 1,
+  "description": "匕首之心(Daggerheart)角色卡：JSON导入车卡、绑定棋子、点击数据投2d12双色骰",
+  "author": "你的名字",
+  "icon": "icon.svg",
+  "action": {
+    "title": "匕首之心角色卡",
+    "icon": "icon.svg",
+    "popover": "panel.html",
+    "width": 430,
+    "height": 620
+  },
+  "background_url": "background.html"
+}
